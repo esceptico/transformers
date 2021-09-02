@@ -248,6 +248,7 @@ _import_structure = {
     "models.retribert": ["RETRIBERT_PRETRAINED_CONFIG_ARCHIVE_MAP", "RetriBertConfig", "RetriBertTokenizer"],
     "models.roberta": ["ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP", "RobertaConfig", "RobertaTokenizer"],
     "models.roformer": ["ROFORMER_PRETRAINED_CONFIG_ARCHIVE_MAP", "RoFormerConfig", "RoFormerTokenizer"],
+    "models.segformer": ["SEGFORMER_PRETRAINED_CONFIG_ARCHIVE_MAP", "SegformerConfig"],
     "models.speech_encoder_decoder": ["SpeechEncoderDecoderConfig"],
     "models.speech_to_text": [
         "SPEECH_TO_TEXT_PRETRAINED_CONFIG_ARCHIVE_MAP",
@@ -451,6 +452,7 @@ if is_vision_available():
     _import_structure["models.layoutlmv2"].append("LayoutLMv2FeatureExtractor")
     _import_structure["models.layoutlmv2"].append("LayoutLMv2Processor")
     _import_structure["models.vit"].append("ViTFeatureExtractor")
+    _import_structure["models.segformer"].append("SegformerFeatureExtractor")
 else:
     from .utils import dummy_vision_objects
 
@@ -1080,6 +1082,16 @@ if is_torch_available():
             "RoFormerModel",
             "RoFormerPreTrainedModel",
             "load_tf_weights_in_roformer",
+        ]
+    )
+    _import_structure["models.segformer"].extend(
+        [
+            "SEGFORMER_PRETRAINED_MODEL_ARCHIVE_LIST",
+            "SegformerForImageClassification",
+            "SegformerForImageSegmentation",
+            "SegformerLayer",
+            "SegformerModel",
+            "SegformerPreTrainedModel",
         ]
     )
     _import_structure["models.speech_encoder_decoder"].extend(["SpeechEncoderDecoderModel"])
@@ -2028,6 +2040,7 @@ if TYPE_CHECKING:
     from .models.retribert import RETRIBERT_PRETRAINED_CONFIG_ARCHIVE_MAP, RetriBertConfig, RetriBertTokenizer
     from .models.roberta import ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP, RobertaConfig, RobertaTokenizer
     from .models.roformer import ROFORMER_PRETRAINED_CONFIG_ARCHIVE_MAP, RoFormerConfig, RoFormerTokenizer
+    from .models.segformer import SEGFORMER_PRETRAINED_CONFIG_ARCHIVE_MAP, SegformerConfig
     from .models.speech_encoder_decoder import SpeechEncoderDecoderConfig
     from .models.speech_to_text import SPEECH_TO_TEXT_PRETRAINED_CONFIG_ARCHIVE_MAP, Speech2TextConfig
     from .models.speech_to_text_2 import (
@@ -2203,6 +2216,7 @@ if TYPE_CHECKING:
         from .models.detr import DetrFeatureExtractor
         from .models.layoutlmv2 import LayoutLMv2FeatureExtractor, LayoutLMv2Processor
         from .models.vit import ViTFeatureExtractor
+        from .models.segformer import SegformerFeatureExtractor
     else:
         from .utils.dummy_vision_objects import *
 
@@ -2219,6 +2233,7 @@ if TYPE_CHECKING:
         from .utils.dummy_timm_objects import *
 
     if is_torch_available():
+
         # Benchmarks
         from .benchmark.benchmark import PyTorchBenchmark
         from .benchmark.benchmark_args import PyTorchBenchmarkArguments
@@ -2729,6 +2744,13 @@ if TYPE_CHECKING:
             RoFormerModel,
             RoFormerPreTrainedModel,
             load_tf_weights_in_roformer,
+        )
+        from .models.segformer import (
+            SEGFORMER_PRETRAINED_MODEL_ARCHIVE_LIST,
+            SegformerForImageClassification,
+            SegformerForImageSegmentation,
+            SegformerModel,
+            SegformerPreTrainedModel,
         )
         from .models.speech_encoder_decoder import SpeechEncoderDecoderModel
         from .models.speech_to_text import (
