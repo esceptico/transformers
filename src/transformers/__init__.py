@@ -1045,6 +1045,7 @@ if is_torch_available():
             "PerceiverLayer",
             "PerceiverModel",
             "PerceiverPreTrainedModel",
+            "PerceiverTextPostprocessor",
             "PerceiverTextPreprocessor",
         ]
     )
@@ -2760,6 +2761,7 @@ if TYPE_CHECKING:
             PerceiverLayer,
             PerceiverModel,
             PerceiverPreTrainedModel,
+            PerceiverTextPostprocessor,
             PerceiverTextPreprocessor,
         )
         from .models.prophetnet import (
