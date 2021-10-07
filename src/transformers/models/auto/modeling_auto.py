@@ -239,6 +239,7 @@ MODEL_FOR_IMAGE_SEGMENTATION_MAPPING_NAMES = OrderedDict(
 MODEL_FOR_MASKED_LM_MAPPING_NAMES = OrderedDict(
     [
         # Model for Masked LM mapping
+        ("perceiver", "PerceiverForMaskedLM"),
         ("fnet", "FNetForMaskedLM"),
         ("rembert", "RemBertForMaskedLM"),
         ("roformer", "RoFormerForMaskedLM"),
