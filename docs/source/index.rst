@@ -608,6 +608,7 @@ Flax), PyTorch, and/or TensorFlow.
     model_doc/gpt_neo
     model_doc/hubert
     model_doc/pegasus
+    model_doc/perceiver
     model_doc/phobert
     model_doc/prophetnet
     model_doc/rag
