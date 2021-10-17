@@ -1515,6 +1515,11 @@ class PerceiverAbstractDecoder(nn.Module, metaclass=abc.ABCMeta):
     def decoder_query(self, inputs, modality_sizes=None, inputs_without_pos=None, subsampled_points=None):
         raise NotImplementedError
 
+    @property
+    @abc.abstractmethod
+    def num_query_channels(self):
+        raise NotImplementedError
+
     @abc.abstractmethod
     def output_shape(self, inputs):
         raise NotImplementedError
@@ -1580,20 +1585,24 @@ class PerceiverBasicDecoder(PerceiverAbstractDecoder):
         # You should construct your own when quering the decoder.
         self.output_position_encodings = None
         self.position_encoding_type = position_encoding_type
+        self.position_encoding_kwargs = position_encoding_kwargs
         if position_encoding_type != "none":
             self.output_position_encodings, self.positions_projection = build_position_encoding(
                 position_encoding_type=position_encoding_type, **position_encoding_kwargs
             )
 
         self.output_index_dims = output_index_dims
+        self.num_channels = num_channels
         if subsampled_index_dims is None:
             subsampled_index_dims = output_index_dims
         self.subsampled_index_dims = subsampled_index_dims
         self.concat_preprocessed_input = concat_preprocessed_input
+        self.final_project = final_project
+        self.position_encoding_only = position_encoding_only
 
         # for multimodal autoencoding, we don't need the decoder cross-attention and final layer
         # so then we will set position_encoding_only to True
-        if not position_encoding_only:
+        if not self.position_encoding_only:
             self.decoding_cross_attention = PerceiverLayer(
                 config,
                 is_cross_attention=True,
@@ -1606,6 +1615,20 @@ class PerceiverBasicDecoder(PerceiverAbstractDecoder):
                 use_query_residual=use_query_residual,
             )
             self.final_layer = nn.Linear(num_channels, output_num_channels) if final_project else nn.Identity()
+
+    @property
+    def num_query_channels(self) -> int:
+        if self.position_encoding_type == "none":  # Queries come from elsewhere
+            raise ValueError(
+                "You cannot calculate number of decoder query channels when position_encoding_type is set to none"
+            )
+        if self.position_encoding_only:
+            if 'project_pos_dim' in self.position_encoding_kwargs:
+                return self.position_encoding_kwargs['project_pos_dim']
+            return self.output_position_encodings.output_size(pos_dim=1)
+        if self.final_project:
+            return self.output_num_channels
+        return self.num_channels
 
     def output_shape(self, inputs):
         return ((inputs[0], self.subsampled_index_dims, self.output_num_channels), None)
@@ -1651,7 +1674,7 @@ class PerceiverBasicDecoder(PerceiverAbstractDecoder):
 
         if self.concat_preprocessed_input:
             if inputs_without_pos is None:
-                raise ValueError("Value is required for inputs_without_pos if" " concat_preprocessed_input is True")
+                raise ValueError("Value is required for inputs_without_pos if concat_preprocessed_input is True")
             pos_emb = torch.cat([inputs_without_pos, pos_emb], div=-1)
 
         return pos_emb
@@ -1708,6 +1731,10 @@ class PerceiverClassificationDecoder(PerceiverAbstractDecoder):
             **decoder_kwargs,
         )
 
+    @property
+    def num_query_channels(self) -> int:
+        return self.decoder.num_query_channels
+
     def decoder_query(self, inputs, modality_sizes=None, inputs_without_pos=None, subsampled_points=None):
         return self.decoder.decoder_query(
             inputs, modality_sizes, inputs_without_pos, subsampled_points=subsampled_points
@@ -1735,6 +1762,10 @@ class PerceiverFlowDecoder(PerceiverAbstractDecoder):
         self.output_num_channels = output_num_channels
         self.rescale_factor = rescale_factor
         self.decoder = PerceiverBasicDecoder(config, output_num_channels=output_num_channels, **decoder_kwargs)
+
+    @property
+    def num_query_channels(self) -> int:
+        return self.decoder.num_query_channels
 
     def output_shape(self, inputs):
         # The channel dimensions of output here don't necessarily correspond to
@@ -1776,6 +1807,10 @@ class PerceiverBasicVideoAutoencodingDecoder(PerceiverAbstractDecoder):
             position_encoding_type=position_encoding_type,
             **decoder_kwargs,
         )
+
+    @property
+    def num_query_channels(self) -> int:
+        return self.decoder.num_query_channels
 
     def decoder_query(self, inputs, modality_sizes=None, inputs_without_pos=None, subsampled_points=None):
         return self.decoder.decoder_query(
@@ -1847,14 +1882,19 @@ class PerceiverMultimodalDecoder(PerceiverAbstractDecoder):
             output_index_dims=(num_outputs,),
             output_num_channels=output_num_channels,
             position_encoding_type="none",
-            num_channels=1026,  # TODO make this better
+            num_channels=self.num_query_channels,
             **decoder_kwargs,
         )
+        self.padding = nn.ParameterDict({
+            modality: nn.Parameter(torch.randn(1, self.num_query_channels - decoder.num_query_channels))
+            for modality, decoder in modalities.items()
+        })
 
-        # we need to register one additional parameter for each modality: padding
-        # see https://discuss.pytorch.org/t/dynamic-parameter-declaration-in-forward-function/427
-        for modality in self.modalities.keys():
-            self.register_parameter(modality + "_padding", None)
+    @property
+    def num_query_channels(self) -> int:
+        max_channel_size = max(decoder.num_query_channels for _, decoder in self.modalities.items())
+        common_channel_size = max_channel_size + self.min_padding_size
+        return common_channel_size
 
     def decoder_query(self, inputs, modality_sizes, inputs_without_pos=None, subsampled_points=None):
         # Partition the flat inputs among the different modalities
@@ -1877,18 +1917,13 @@ class PerceiverMultimodalDecoder(PerceiverAbstractDecoder):
             )
 
         # Pad all queries with trainable position encodings to make them have the same channels
-        num_channels = max(query.shape[2] for query in decoder_queries.values()) + self.min_padding_size
 
         def embed(modality, x):
             x = torch.reshape(x, [x.shape[0], np.prod(x.shape[1:-1]), x.shape[-1]])
-            parameter_name = modality + "_padding"
-            if hasattr(self, parameter_name) and getattr(self, parameter_name) is None:
-                setattr(self, parameter_name, nn.Parameter(torch.randn(1, num_channels - x.shape[2])))
+            pos = self.padding[modality]
             batch_size = x.shape[0]
-            pos = getattr(self, parameter_name).expand(batch_size, -1, -1)
-            pos = torch.broadcast_to(pos, [x.shape[0], x.shape[1], num_channels - x.shape[2]])
+            pos = torch.broadcast_to(pos, [x.shape[0], x.shape[1], self.num_query_channels - x.shape[2]])
             return torch.cat([x, pos], dim=2)
-
         # Apply a predictable ordering to the modalities
         return torch.cat(
             [embed(modality, decoder_queries[modality]) for modality in sorted(self.modalities.keys())], dim=1
@@ -1986,7 +2021,6 @@ class Conv2DDownsample(nn.Module):
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2)
 
     def forward(self, inputs):
-        out = inputs
         out = self.conv(inputs)
         out = self.batchnorm(out)
         out = self.relu(out)
